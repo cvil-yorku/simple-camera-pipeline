@@ -8,6 +8,9 @@ Camera pipeline utilities.
 import os
 from fractions import Fraction
 
+import colour
+import scipy
+from colour import LUT3D
 import cv2
 import numpy as np
 import exifread
@@ -47,18 +50,32 @@ def get_metadata(image_path):
     ifds = get_image_ifds(image_path)
     metadata['linearization_table'] = get_linearization_table(tags, ifds)
     metadata['black_level'] = get_black_level(tags, ifds)
+    #a hack
+    metadata['black_level'] = metadata['black_level'][0]
+    #print("BLACK LEVEL", metadata['black_level'])
     metadata['white_level'] = get_white_level(tags, ifds)
+    metadata['white_level'] = metadata['white_level'][0]
     metadata['cfa_pattern'] = get_cfa_pattern(tags, ifds)
     metadata['as_shot_neutral'] = get_as_shot_neutral(tags, ifds)
     color_matrix_1, color_matrix_2 = get_color_matrices(tags, ifds)
+    camera_calibration_1, camera_calibration_2 = get_calibration_matrices(tags, ifds)
+    analog_balance = get_analog_balance(tags, ifds)
+    forward_matrix_1, forward_matrix_2 = get_forward_matrices(tags, ifds)
     metadata['color_matrix_1'] = color_matrix_1
     metadata['color_matrix_2'] = color_matrix_2
+    metadata['forward_matrix_1'] = forward_matrix_1
+    metadata['forward_matrix_2'] = forward_matrix_2
     metadata['orientation'] = get_orientation(tags, ifds)
     metadata['noise_profile'] = get_noise_profile(tags, ifds)
+    metadata['lut3D'] = get_hsv_luts(tags, ifds)
+    metadata['profile_lut'] = get_profile_luts(tags, ifds)
     # ...
 
     # opcode lists
     metadata['opcode_lists'] = parse_opcode_lists(ifds)
+
+    metadata['polynomial'] = metadata['opcode_lists'][51009]
+
 
     # fall back to default values, if necessary
     if metadata['black_level'] is None:
@@ -123,13 +140,74 @@ def get_as_shot_neutral(tags, ifds):
     return get_values(tags, possible_keys)
 
 
+def get_hsv_luts(tags, ifds):
+    possible_keys_1 = ['Image Tag 0xC6F9', 'Image Tag 50937', 'ProfileHueSatMapDims', 'Image ProfileHueSatMapDims']
+    hue_sat_map_dims = get_values(tags, possible_keys_1)
+    if hue_sat_map_dims is None:
+        hue_sat_map_dims = get_tag_values_from_ifds(50937, ifds)
+    possible_keys_2 = ['Image Tag 0xC6FA', 'Image Tag 50938', 'ProfileHueSatMapData1', 'Image ProfileHueSatMapData1']
+    #hsv_lut_1 = get_values(tags, possible_keys_2)
+    hsv_lut_1 = None
+    if hsv_lut_1 is None:
+        hsv_lut_1 = get_tag_values_from_ifds(50938, ifds)
+
+    hue_sat_map_dims.append(3)
+
+    hsv_lut = np.reshape(hsv_lut_1, newshape = hue_sat_map_dims)
+    #lutTable =
+    lut3D = LUT3D(table = hsv_lut, domain=[[0,0,0], [360,1,1]])
+
+
+    return lut3D
+
+def get_profile_luts(tags, ifds):
+    possible_keys_1 = ['Image Tag 0xC725', 'Image Tag 50981', 'ProfileLookTableDims', 'Image ProfileLookTableDims']
+    hue_sat_map_dims = get_values(tags, possible_keys_1)
+    if hue_sat_map_dims is None:
+        hue_sat_map_dims = get_tag_values_from_ifds(50981, ifds)
+    possible_keys_2 = ['Image Tag 0xC726', 'Image Tag 50982', 'ProfileLookTableData', 'Image ProfileLookTableData']
+    #hsv_lut_1 = get_values(tags, possible_keys_2)
+    hsv_lut_1 = None
+    if hsv_lut_1 is None:
+        hsv_lut_1 = get_tag_values_from_ifds(50982, ifds)
+
+    hue_sat_map_dims.append(3)
+
+    hsv_lut = np.reshape(hsv_lut_1, newshape = hue_sat_map_dims)
+    #lutTable =
+    lut3D = LUT3D(table = hsv_lut, domain=[[0,0,0], [360,1,1]])
+
+
+    return lut3D
+
 def get_color_matrices(tags, ifds):
+
     possible_keys_1 = ['Image Tag 0xC621', 'Image Tag 50721', 'ColorMatrix1', 'Image ColorMatrix1']
     color_matrix_1 = get_values(tags, possible_keys_1)
     possible_keys_2 = ['Image Tag 0xC622', 'Image Tag 50722', 'ColorMatrix2', 'Image ColorMatrix2']
     color_matrix_2 = get_values(tags, possible_keys_2)
     return color_matrix_1, color_matrix_2
 
+def get_forward_matrices(tags, ifds):
+
+    possible_keys_1 = ['Image Tag 0xC714', 'Image Tag 50964', 'ForwardMatrix1', 'Image ForwardMatrix1']
+    forward_matrix_1 = get_values(tags, possible_keys_1)
+    possible_keys_2 = ['Image Tag 0xC715', 'Image Tag 50965', 'ForwardMatrix2', 'Image ForwardMatrix2']
+    forward_matrix_2 = get_values(tags, possible_keys_2)
+    return forward_matrix_1, forward_matrix_2
+
+def get_calibration_matrices(tags, ifds):
+
+    possible_keys_1 = ['Image Tag 0xC623', 'Image Tag 50723', 'CameraCalibration1', 'Image CameraCalibration1']
+    camera_calibration_1 = get_values(tags, possible_keys_1)
+    possible_keys_2 = ['Image Tag 0xC624', 'Image Tag 50724', 'CameraCalibration2', 'Image CameraCalibration2']
+    camera_calibration_2 = get_values(tags, possible_keys_2)
+    return camera_calibration_1, camera_calibration_2
+
+def get_analog_balance(tags, ifds):
+    possible_keys_1 = ['Image Tag 0xC627', 'Image Tag 50727', 'AnalogBalance', 'Image AnalogBalance']
+    analog_balance = get_values(tags, possible_keys_1)
+    return analog_balance
 
 def get_orientation(tags, ifds):
     possible_tags = ['Orientation', 'Image Orientation']
@@ -143,6 +221,7 @@ def get_noise_profile(tags, ifds):
         # print("Noise profile not found in exifread tags. Searching IFDs.")
         vals = get_tag_values_from_ifds(51041, ifds)
     return vals
+
 
 
 def get_values(tags, possible_keys):
@@ -179,6 +258,22 @@ def ratios2floats(ratios):
     for ratio in ratios:
         floats.append(float(ratio.num) / ratio.den)
     return floats
+
+def polynomial(current_image, polynomial_opcode):
+    idx2by2 = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    po = polynomial_opcode[8]
+    for i, idx in enumerate(idx2by2):
+        if(i == 0):
+            po_i_data = po[0].data
+        elif(i==1 or i==2):
+            po_i_data = po[1].data
+        else:
+            po_i_data = po[2].data
+        plane = current_image[idx[0]::2, idx[1]::2]
+        coefficient = po_i_data["Coefficient"]
+        planeTransform = coefficient[3]* np.power(plane,3) + coefficient[2]* np.power(plane,2)+(coefficient[1])* np.power(plane,1)+coefficient[0]
+        current_image[idx[0]::2, idx[1]::2] = planeTransform
+    return current_image
 
 def vignetting_correction(raw_image, vignetting_opcode):
     data = vignetting_opcode.data
@@ -218,6 +313,7 @@ def vignetting_correction(raw_image, vignetting_opcode):
     for c in range(3):
         raw_image[:,:,c] = raw_image[:,:,c]* g
     return raw_image
+
 
 
 def lens_shading_correction(raw_image, gain_map_opcode, bayer_pattern, gain_map=None, clip=True):
@@ -305,7 +401,8 @@ def white_balance(normalized_image, as_shot_neutral, cfa_pattern):
         white_balanced_image[idx_y::step2, idx_x::step2] = \
             normalized_image[idx_y::step2, idx_x::step2] / as_shot_neutral[cfa_pattern[i]]
     white_balanced_image = np.clip(white_balanced_image, 0.0, 1.0)
-    return white_balanced_image
+    #return white_balanced_image
+    return normalized_image
 
 
 def get_opencv_demsaic_flag(cfa_pattern, output_channel_order, alg_type='VNG'):
@@ -339,6 +436,123 @@ def get_opencv_demsaic_flag(cfa_pattern, output_channel_order, alg_type='VNG'):
     return opencv_demosaic_flag
 
 
+def performInterpolation(xyz_image, lut):
+    def interp(samples, lut_table):
+        #p = np.mgrid[0:360:4, 0:100:100/30.0]
+        #x = p.transpose(1,2,3, 0)
+        #p = p.reshape(90,30,1,3)
+        #samples = samples.reshape(4490*6720,3)
+        #samples = samples.reshape(4490,6720,3)
+
+        samples[:,:,0] = samples[:,:,0]*360
+        samples[:,:,1] = samples[:,:,1]
+        samples[:,:,2] = samples[:,:,2]
+        samplesOriginal = np.copy(samples)
+        samples = samples[:,:,0:2]
+        lut_table = lut_table.reshape(90,30,3)
+        p = (np.linspace(0,360,90), np.linspace(0,1,30))
+        outInterpolate = scipy.interpolate.interpn(points = p, values = lut_table, xi = samples)
+        samplesOriginal[:,:,0] =(samplesOriginal[:,:,0] + outInterpolate[:,:,0])
+        samplesOriginal[:,:,1] = (np.clip(samplesOriginal[:,:,1] * outInterpolate[:,:,1], 0, 1))
+        samplesOriginal[:,:,2] = (np.clip(samplesOriginal[:,:,2] * outInterpolate[:,:,2], 0, 1))
+        return samplesOriginal
+
+    #prophoto
+    rgb2xyz = np.array([[0.7976749, 0.1351917, 0.0313534],
+                         [0.2880402, 0.7118741, 0.0000857],
+                         [0.0000000, 0.0000000, 0.8252100]])
+
+    xyz2rgb = np.linalg.inv(rgb2xyz)
+
+    rgb_image = xyz2rgb[np.newaxis, np.newaxis, :, :] * xyz_image[:, :, np.newaxis, :]
+    rgb_image = np.sum(rgb_image, axis=-1)
+
+
+    rgb = rgb_image.astype('float32')
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    hsvChanged = lut.apply(hsv, interpolator=interp)
+
+    #hsvChangedInt8 = hsvChanged.astype('uint8')
+    rgbChanged = (cv2.cvtColor(hsvChanged.astype('float32'), cv2.COLOR_HSV2RGB))
+    #rgbChanged = rgbChanged /255.0
+
+
+
+    xyz_out = rgb2xyz[np.newaxis, np.newaxis, :, :] * rgbChanged[:, :, np.newaxis, :]
+    xyz_out = np.sum(xyz_out, axis=-1)
+
+
+    #rgb = np.matmul()
+
+
+    #taken from https://www.geeksforgeeks.org/program-change-rgb-color-model-hsv-color-model/
+
+
+
+    #hsv = cv2.cvtColor(xyz,cv2.COLOR_XYZ2RGB)
+    #hsv = cv2.cvtColor(xyz, cv2.COLOR_XYZ2RGB)
+
+    return xyz_out
+
+
+def performLookTable(xyz_image, lut):
+    def interp(samples, lut_table):
+        #p = np.mgrid[0:360:4, 0:100:100/30.0]
+        #x = p.transpose(1,2,3, 0)
+        #p = p.reshape(90,30,1,3)
+        #samples = samples.reshape(4490*6720,3)
+        #samples = samples.reshape(4490,6720,3)
+
+        samples[:,:,0] = samples[:,:,0]*360
+        samples[:,:,1] = samples[:,:,1]
+        samples[:,:,2] = samples[:,:,2]
+        samplesOriginal = np.copy(samples)
+        #samples = samples[:,:,0:2]
+        lut_table = lut_table.reshape(36,8,16,3)
+        p = (np.linspace(0,360,36), np.linspace(0,1,8), np.linspace(0,1,16))
+        outInterpolate = scipy.interpolate.interpn(points = p, values = lut_table, xi = samples)
+        samplesOriginal[:,:,0] =(samplesOriginal[:,:,0] + outInterpolate[:,:,0])
+        samplesOriginal[:,:,1] = (np.clip(samplesOriginal[:,:,1] * outInterpolate[:,:,1], 0, 1))
+        samplesOriginal[:,:,2] = (np.clip(samplesOriginal[:,:,2] * outInterpolate[:,:,2], 0, 1))
+        return samplesOriginal
+
+    #prophoto
+    rgb2xyz = np.array([[0.7976749, 0.1351917, 0.0313534],
+                         [0.2880402, 0.7118741, 0.0000857],
+                         [0.0000000, 0.0000000, 0.8252100]])
+
+    xyz2rgb = np.linalg.inv(rgb2xyz)
+
+    rgb_image = xyz2rgb[np.newaxis, np.newaxis, :, :] * xyz_image[:, :, np.newaxis, :]
+    rgb_image = np.sum(rgb_image, axis=-1)
+
+
+    rgb = rgb_image.astype('float32')
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    hsvChanged = lut.apply(hsv, interpolator=interp)
+
+    #hsvChangedInt8 = hsvChanged.astype('uint8')
+    rgbChanged = (cv2.cvtColor(hsvChanged.astype('float32'), cv2.COLOR_HSV2RGB))
+    #rgbChanged = rgbChanged /255.0
+
+
+
+    xyz_out = rgb2xyz[np.newaxis, np.newaxis, :, :] * rgbChanged[:, :, np.newaxis, :]
+    xyz_out = np.sum(xyz_out, axis=-1)
+
+
+    #rgb = np.matmul()
+
+
+    #taken from https://www.geeksforgeeks.org/program-change-rgb-color-model-hsv-color-model/
+
+
+
+    #hsv = cv2.cvtColor(xyz,cv2.COLOR_XYZ2RGB)
+    #hsv = cv2.cvtColor(xyz, cv2.COLOR_XYZ2RGB)
+
+    return xyz_out
+
 def demosaic(white_balanced_image, cfa_pattern, output_channel_order='BGR', alg_type='VNG'):
     """
     Demosaic a Bayer image.
@@ -362,29 +576,55 @@ def demosaic(white_balanced_image, cfa_pattern, output_channel_order='BGR', alg_
         cfa_pattern_str = "".join(["RGB"[i] for i in cfa_pattern])
         demosaiced_image = demosaicing_CFA_Bayer_Menon2007(wb_image, pattern=cfa_pattern_str)
 
-    demosaiced_image = demosaiced_image.astype(dtype=np.float32) / max_val
+    demosaiced_image = demosaiced_image.astype(dtype=np.float32)/ max_val
 
     return demosaiced_image
 
 
-def apply_color_space_transform(demosaiced_image, color_matrix_1, color_matrix_2):
-    if type(color_matrix_1[0]) is Ratio:
-        color_matrix_1 = ratios2floats(color_matrix_1)
-    if type(color_matrix_2[0]) is Ratio:
-        color_matrix_2 = ratios2floats(color_matrix_2)
-    xyz2cam1 = np.reshape(np.asarray(color_matrix_1), (3, 3))
-    xyz2cam2 = np.reshape(np.asarray(color_matrix_2), (3, 3))
-    # normalize rows (needed?)
-    xyz2cam1 = xyz2cam1 / np.sum(xyz2cam1, axis=1, keepdims=True)
-    xyz2cam2 = xyz2cam2 / np.sum(xyz2cam1, axis=1, keepdims=True)
-    # inverse
-    cam2xyz1 = np.linalg.inv(xyz2cam1)
-    cam2xyz2 = np.linalg.inv(xyz2cam2)
-    # for now, use one matrix  # TODO: interpolate btween both
-    # simplified matrix multiplication
-    xyz_image = cam2xyz1[np.newaxis, np.newaxis, :, :] * demosaiced_image[:, :, np.newaxis, :]
+def apply_color_space_transform(demosaiced_image, color_matrix_1, color_matrix_2, forward_matrix_1, forward_matrix_2, as_shot_neutral):
+    # if type(color_matrix_1[0]) is Ratio:
+    #     color_matrix_1 = ratios2floats(color_matrix_1)
+    # if type(color_matrix_2[0]) is Ratio:
+    #     color_matrix_2 = ratios2floats(color_matrix_2)
+    # xyz2cam1 = np.reshape(np.asarray(color_matrix_1), (3, 3))
+    # xyz2cam2 = np.reshape(np.asarray(color_matrix_2), (3, 3))
+    # # normalize rows (needed?)
+    # #xyz2cam1 = xyz2cam1 / np.sum(xyz2cam1, axis=1, keepdims=True)
+    # #xyz2cam2 = xyz2cam2 / np.sum(xyz2cam1, axis=1, keepdims=True)
+    # # inverse
+    # cam2xyz1 = np.linalg.inv(xyz2cam1)
+    # cam2xyz2 = np.linalg.inv(xyz2cam2)
+    # # for now, use one matrix  # TODO: interpolate btween both
+    # # simplified matrix multiplication
+    # xyz_image = cam2xyz2[np.newaxis, np.newaxis, :, :] * demosaiced_image[:, :, np.newaxis, :]
+    # xyz_image = np.sum(xyz_image, axis=-1)
+    #
+
+    D_inv = np.array([[as_shot_neutral[0].decimal(), 0, 0],
+                      [0, as_shot_neutral[1].decimal(),0],
+                      [0, 0, as_shot_neutral[2].decimal()]])
+    print("D_inv", D_inv)
+    D = np.linalg.inv(D_inv)
+    print("D", D)
+
+    fm1_elements = []
+    for i in forward_matrix_1:
+        fm1_elements.append(i.decimal())
+
+    fm2_elements = []
+    for i in forward_matrix_2:
+        fm2_elements.append(i.decimal())
+
+    g = 0
+    FM1 = np.array(fm1_elements).reshape((3,3))
+    FM2 = np.array(fm2_elements).reshape((3, 3))
+    FM = g*FM1 + (1-g)*FM2
+    DF = np.matmul(FM,D)
+
+    xyz_image = DF[np.newaxis, np.newaxis, :, :] * demosaiced_image[:, :, np.newaxis, :]
     xyz_image = np.sum(xyz_image, axis=-1)
-    xyz_image = np.clip(xyz_image, 0.0, 1.0)
+
+    #xyz_image = np.clip(xyz_image, 0.0, 1.0)
     return xyz_image
 
 
@@ -395,12 +635,20 @@ def transform_xyz_to_srgb(xyz_image):
 
     # xyz2srgb = np.linalg.inv(srgb2xyz)
 
-    xyz2srgb = np.array([[3.2404542, -1.5371385, -0.4985314],
-                         [-0.9692660, 1.8760108, 0.0415560],
-                         [0.0556434, -0.2040259, 1.0572252]])
+    # xyz2srgb = np.array([[3.2404542, -1.5371385, -0.4985314],
+    #                      [-0.9692660, 1.8760108, 0.0415560],
+    #                      [0.0556434, -0.2040259, 1.0572252]])
+
+    xyz2srgb = np.array([[3.1338561, -1.6168667, -0.4906146],
+                         [-0.9787684, 1.9161415, 0.0334540],
+                         [0.0719453, -0.2289914, 1.4052427]])
+
+    # xyz2srgb = np.array([[1.3459433, -0.2556075, -0.0511118],
+    #                      [-0.5445989, 1.5081673, 0.0205351],
+    #                      [0.0000000, 0.0000000, 1.2118128]])
 
     # normalize rows (needed?)
-    xyz2srgb = xyz2srgb / np.sum(xyz2srgb, axis=-1, keepdims=True)
+    #xyz2srgb = xyz2srgb / np.sum(xyz2srgb, axis=-1, keepdims=True)
 
     srgb_image = xyz2srgb[np.newaxis, np.newaxis, :, :] * xyz_image[:, :, np.newaxis, :]
     srgb_image = np.sum(srgb_image, axis=-1)
@@ -457,7 +705,8 @@ def reverse_orientation(image, orientation):
 
 
 def apply_gamma(x):
-    return x ** (1.0 / 2.2)
+    print("APPLYING GAMMA with 2.4")
+    return x ** (1.0 / 2.4)
 
 
 def apply_tone_map(x):

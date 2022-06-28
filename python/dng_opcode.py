@@ -35,6 +35,7 @@ def parse_opcode_lists(ifds):
         opcode_list_ = get_tag_values_from_ifds(tag_num, ifds)
         if opcode_list_ is not None:
             opcode_list_ = bytearray(opcode_list_)
+            print(tag_num)
             opcodes = parse_opcodes(opcode_list_)
             opcode_lists.update({tag_num: opcodes})
         else:
@@ -65,8 +66,11 @@ def parse_opcodes(opcode_list):
     num_opcodes = struct.unpack(endian_sign + "I", opcode_list[i:i + 4])[0]
     i += 4
 
+
+
     opcodes = {}
     for j in range(num_opcodes):
+
         opcode_id_ = struct.unpack(endian_sign + "I", opcode_list[i:i + 4])[0]
         i += 4
         dng_spec_ver = [struct.unpack(endian_sign + "B", opcode_list[i + k:i + k + 1])[0] for k in range(4)]
@@ -85,21 +89,48 @@ def parse_opcodes(opcode_list):
         opcode_size_bytes = struct.unpack(endian_sign + "I", opcode_list[i:i + 4])[0]
         i += 4
 
-        opcode_data = opcode_list[i:i + 4 * opcode_size_bytes]
-        i += 4 * opcode_size_bytes
+        opcode_data = opcode_list[i:i + opcode_size_bytes]
+        i += opcode_size_bytes
 
         # GainMap (lens shading correction map)
         if opcode_id_ == 9:
             opcode_gain_map_data = parse_opcode_gain_map(opcode_data)
             opcode_data = opcode_gain_map_data
 
+        if opcode_id_ == 8:
+            opcode_polynomial_data = parse_opcode_polynomial(opcode_data)
+            opcode_data = opcode_polynomial_data
+
+
         # set opcode object
         opcode = Opcode(id_=opcode_id_, dng_spec_ver=dng_spec_ver, option_bits=option_bits,
                         size_bytes=opcode_size_bytes,
                         data=opcode_data)
-        opcodes.update({opcode_id_: opcode})
+        if(opcode_id_ in opcodes.keys()):
+            opcodes[opcode_id_].append(opcode)
+        else:
+            opcodes.update({opcode_id_: [opcode]})
 
-        return opcodes
+    return opcodes
+def parse_opcode_polynomial(data):
+    opcode_dict = {}
+    opcode_dict["top"] = struct.unpack('>l', data[0:4])[0]
+    opcode_dict["left"] = struct.unpack('>l', data[4:8])[0]
+    opcode_dict["bottom"] = struct.unpack('>l', data[8:12])[0]
+    opcode_dict["right"] = struct.unpack('>l', data[12:16])[0]
+    opcode_dict["plane"] = struct.unpack('>l', data[16:20])[0]
+    opcode_dict["planes"] = struct.unpack('>l', data[20:24])[0]
+    opcode_dict["RowPitch"] = struct.unpack('>l', data[24:28])[0]
+    opcode_dict["ColPitch"] = struct.unpack('>l', data[28:32])[0]
+    opcode_dict["Degree"] = struct.unpack('>l', data[32:36])[0]
+    j = 36
+    Coefficient = []
+    for i in range(opcode_dict["Degree"]+1):
+        Coefficient.append(struct.unpack('>d', data[j:j+8])[0])
+        j+=8
+    opcode_dict["Coefficient"] = Coefficient
+    return opcode_dict
+
 
 
 def parse_opcode_gain_map(opcode_data):

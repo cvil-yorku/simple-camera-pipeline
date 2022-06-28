@@ -1,7 +1,7 @@
 import numpy as np
-from python.pipeline_utils import get_visible_raw_image, get_metadata, normalize, white_balance, demosaic, \
+from .pipeline_utils import get_visible_raw_image, get_metadata, normalize, polynomial, white_balance, demosaic, \
     apply_color_space_transform, transform_xyz_to_srgb, apply_gamma, apply_tone_map, fix_orientation, \
-    lens_shading_correction, vignetting_correction
+    lens_shading_correction, vignetting_correction, performInterpolation, performLookTable
 
 
 def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
@@ -29,6 +29,7 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
             # TODO
 
         current_image = normalize(current_image, metadata['black_level'], metadata['white_level'])
+        current_image = polynomial(current_image, metadata["polynomial"])
         params_['input_stage'] = 'normal'
 
     current_stage = 'normal'
@@ -41,9 +42,11 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
         if 'opcode_lists' in metadata:
             if 51009 in metadata['opcode_lists']:
                 opcode_list_2 = metadata['opcode_lists'][51009]
-                gain_map_opcode = opcode_list_2[9]
+                if len(opcode_list_2) >= 9:
+                    gain_map_opcode = opcode_list_2[9]
 
         if gain_map_opcode is not None:
+            print("LENS SHADING CORRECTIOn")
             current_image = lens_shading_correction(current_image, gain_map_opcode=gain_map_opcode,
                                                     bayer_pattern=metadata['cfa_pattern'])
         params_['input_stage'] = 'lens_shading_correction'
@@ -80,6 +83,7 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
                 vignetting_opcode = opcode_list_3[3]
 
         if vignetting_opcode is not None:
+            print("VIGNETTING")
             current_image = vignetting_correction(current_image, vignetting_opcode = vignetting_opcode)
         params_['input_stage'] = 'vignetting_correction'
 
@@ -91,10 +95,23 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
 
     if params_['input_stage'] == current_stage:
         current_image = apply_color_space_transform(current_image, metadata['color_matrix_1'],
-                                                    metadata['color_matrix_2'])
+                                                    metadata['color_matrix_2'], metadata['forward_matrix_1'], metadata['forward_matrix_2'], metadata['as_shot_neutral'])
         params_['input_stage'] = 'xyz'
 
     current_stage = 'xyz'
+
+    if params_['output_stage'] == current_stage:
+        return current_image
+
+    if params_['input_stage'] == current_stage:
+        lut = metadata["lut3D"]
+        looktable = metadata["profile_lut"]
+        current_image = performInterpolation(current_image, lut)
+        current_image = performLookTable(current_image, looktable)
+
+        params_['input_stage'] = 'hsv_table'
+
+    current_stage = 'hsv_table'
 
     if params_['output_stage'] == current_stage:
         return current_image
@@ -178,7 +195,7 @@ def run_pipeline(image_path, params):
         return srgb_image
 
     gamma_corrected_image = apply_gamma(srgb_image)
-
+    #gamma_corrected_image = srgb_image
     if params['output_stage'] == 'gamma':
         return gamma_corrected_image
 
