@@ -29,7 +29,7 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
             # TODO
 
         current_image = normalize(current_image, metadata['black_level'], metadata['white_level'])
-        current_image = polynomial(current_image, metadata["polynomial"])
+        #current_image = polynomial(current_image, metadata["polynomial"])
         params_['input_stage'] = 'normal'
 
     current_stage = 'normal'
@@ -94,8 +94,8 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
         return current_image
 
     if params_['input_stage'] == current_stage:
-        current_image = apply_color_space_transform(current_image, metadata['color_matrix_1'],
-                                                    metadata['color_matrix_2'], metadata['forward_matrix_1'], metadata['forward_matrix_2'], metadata['as_shot_neutral'])
+        current_image = apply_color_space_transform(current_image, metadata['camera_calibration_1'],
+                                                    metadata['camera_calibration_2'], metadata['forward_matrix_1'], metadata['forward_matrix_2'], metadata['as_shot_neutral'], metadata['analog_balance'])
         params_['input_stage'] = 'xyz'
 
     current_stage = 'xyz'
@@ -184,22 +184,23 @@ def run_pipeline(image_path, params):
     if params['output_stage'] == 'demosaic':
         return demosaiced_image
 
-    xyz_image = apply_color_space_transform(demosaiced_image, metadata['color_matrix_1'], metadata['color_matrix_2'])
+    xyz_image = apply_color_space_transform(demosaiced_image, metadata['color_corection_1'], metadata['color_matrix_2'])
 
     if params['output_stage'] == 'xyz':
         return xyz_image
 
     srgb_image = transform_xyz_to_srgb(xyz_image)
-
+    #srgb_image = np.pow(srgb_image, 2.2)
     if params['output_stage'] == 'srgb':
         return srgb_image
 
-    gamma_corrected_image = apply_gamma(srgb_image)
+
+    gamma_corrected_image = apply_tone_map(srgb_image)
     #gamma_corrected_image = srgb_image
     if params['output_stage'] == 'gamma':
         return gamma_corrected_image
 
-    tone_mapped_image = apply_tone_map(gamma_corrected_image)
+    tone_mapped_image = apply_gamma(gamma_corrected_image)
     if params['output_stage'] == 'tone':
         return tone_mapped_image
 

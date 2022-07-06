@@ -58,8 +58,8 @@ def get_metadata(image_path):
     metadata['cfa_pattern'] = get_cfa_pattern(tags, ifds)
     metadata['as_shot_neutral'] = get_as_shot_neutral(tags, ifds)
     color_matrix_1, color_matrix_2 = get_color_matrices(tags, ifds)
-    camera_calibration_1, camera_calibration_2 = get_calibration_matrices(tags, ifds)
-    analog_balance = get_analog_balance(tags, ifds)
+    metadata['camera_calibration_1'], metadata['camera_calibration_2'] = get_calibration_matrices(tags, ifds)
+    metadata['analog_balance'] = get_analog_balance(tags, ifds)
     forward_matrix_1, forward_matrix_2 = get_forward_matrices(tags, ifds)
     metadata['color_matrix_1'] = color_matrix_1
     metadata['color_matrix_2'] = color_matrix_2
@@ -149,7 +149,7 @@ def get_hsv_luts(tags, ifds):
     #hsv_lut_1 = get_values(tags, possible_keys_2)
     hsv_lut_1 = None
     if hsv_lut_1 is None:
-        hsv_lut_1 = get_tag_values_from_ifds(50938, ifds)
+        hsv_lut_1 = get_tag_values_from_ifds(50939, ifds)
 
     hue_sat_map_dims.append(3)
 
@@ -401,8 +401,8 @@ def white_balance(normalized_image, as_shot_neutral, cfa_pattern):
         white_balanced_image[idx_y::step2, idx_x::step2] = \
             normalized_image[idx_y::step2, idx_x::step2] / as_shot_neutral[cfa_pattern[i]]
     white_balanced_image = np.clip(white_balanced_image, 0.0, 1.0)
-    #return white_balanced_image
-    return normalized_image
+    return white_balanced_image
+    #return normalized_image
 
 
 def get_opencv_demsaic_flag(cfa_pattern, output_channel_order, alg_type='VNG'):
@@ -581,7 +581,7 @@ def demosaic(white_balanced_image, cfa_pattern, output_channel_order='BGR', alg_
     return demosaiced_image
 
 
-def apply_color_space_transform(demosaiced_image, color_matrix_1, color_matrix_2, forward_matrix_1, forward_matrix_2, as_shot_neutral):
+def apply_color_space_transform(demosaiced_image, color_correction_1, color_correction_2, forward_matrix_1, forward_matrix_2, as_shot_neutral, analog_balance):
     # if type(color_matrix_1[0]) is Ratio:
     #     color_matrix_1 = ratios2floats(color_matrix_1)
     # if type(color_matrix_2[0]) is Ratio:
@@ -615,16 +615,25 @@ def apply_color_space_transform(demosaiced_image, color_matrix_1, color_matrix_2
     for i in forward_matrix_2:
         fm2_elements.append(i.decimal())
 
-    g = 0
+    cc_elements = []
+    for i in color_correction_1:
+        cc_elements.append(i.decimal())
+    CC = np.array(cc_elements).reshape((3, 3))
+
+    g = 0.4
     FM1 = np.array(fm1_elements).reshape((3,3))
     FM2 = np.array(fm2_elements).reshape((3, 3))
     FM = g*FM1 + (1-g)*FM2
-    DF = np.matmul(FM,D)
+
+    DF = FM#np.matmul(FM, D)
+    print(CC)
+    DF = np.matmul(DF,np.linalg.inv(CC))
+
 
     xyz_image = DF[np.newaxis, np.newaxis, :, :] * demosaiced_image[:, :, np.newaxis, :]
     xyz_image = np.sum(xyz_image, axis=-1)
 
-    #xyz_image = np.clip(xyz_image, 0.0, 1.0)
+    xyz_image = np.clip(xyz_image, 0.0, 1.0)
     return xyz_image
 
 
@@ -706,18 +715,27 @@ def reverse_orientation(image, orientation):
 
 def apply_gamma(x):
     print("APPLYING GAMMA with 2.4")
-    return x ** (1.0 / 2.4)
+    return np.clip(1.055 * (x ** (1.0 / 2.2)) - 0.055, 0, 1)
 
 
 def apply_tone_map(x):
     # simple tone curve
     # return 3 * x ** 2 - 2 * x ** 3
 
+    f = open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'acr3.txt'), "r")
+
+    tones = f.read().replace(' ', '').replace('\t', '').replace('\n', '').split(',')
+
+    inRange = np.linspace(0,1,1025)
+    for i, tone in enumerate(tones):
+        tones[i] = float(tone)
+    print(tones)
+
     # tone_curve = loadmat('tone_curve.mat')
-    tone_curve = loadmat(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'tone_curve.mat'))
-    tone_curve = tone_curve['tc']
-    x = np.round(x * (len(tone_curve) - 1)).astype(int)
-    tone_mapped_image = np.squeeze(tone_curve[x])
+    #tone_curve = loadmat(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'tone_curve.mat'))
+    #tone_curve = tone_curve['tc']
+    #x = np.round(x * (len(tone_curve) - 1)).astype(int)
+    tone_mapped_image = np.interp(x, inRange, tones)
     return tone_mapped_image
 
 
