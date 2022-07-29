@@ -21,6 +21,9 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
     current_stage = 'raw'
     current_image = raw_image
 
+    if params_['output_stage'] == current_stage:
+        return current_image
+
     if params_['input_stage'] == current_stage:
         # linearization
         linearization_table = metadata['linearization_table']
@@ -106,8 +109,9 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
     if params_['input_stage'] == current_stage:
         lut = metadata["lut3D"]
         looktable = metadata["profile_lut"]
-        current_image = performInterpolation(current_image, lut)
-        current_image = performLookTable(current_image, looktable)
+        #comment for now
+        #current_image = performInterpolation(current_image, lut)
+        #current_image = performLookTable(current_image, looktable)
 
         params_['input_stage'] = 'hsv_table'
 
@@ -195,12 +199,12 @@ def run_pipeline(image_path, params):
         return srgb_image
 
 
-    gamma_corrected_image = apply_tone_map(srgb_image)
+    gamma_corrected_image = apply_gamma(srgb_image)
     #gamma_corrected_image = srgb_image
     if params['output_stage'] == 'gamma':
         return gamma_corrected_image
 
-    tone_mapped_image = apply_gamma(gamma_corrected_image)
+    tone_mapped_image = apply_tone_map(gamma_corrected_image)
     if params['output_stage'] == 'tone':
         return tone_mapped_image
 

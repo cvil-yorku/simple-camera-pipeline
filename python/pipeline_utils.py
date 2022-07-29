@@ -53,8 +53,10 @@ def get_metadata(image_path):
     #a hack
     metadata['black_level'] = metadata['black_level'][0]
     #print("BLACK LEVEL", metadata['black_level'])
+    print("Black LEVEL", metadata["black_level"])
     metadata['white_level'] = get_white_level(tags, ifds)
     metadata['white_level'] = metadata['white_level'][0]
+    print("White LEVEL", metadata["white_level"])
     metadata['cfa_pattern'] = get_cfa_pattern(tags, ifds)
     metadata['as_shot_neutral'] = get_as_shot_neutral(tags, ifds)
     color_matrix_1, color_matrix_2 = get_color_matrices(tags, ifds)
@@ -400,7 +402,8 @@ def white_balance(normalized_image, as_shot_neutral, cfa_pattern):
         idx_x = idx[1]
         white_balanced_image[idx_y::step2, idx_x::step2] = \
             normalized_image[idx_y::step2, idx_x::step2] / as_shot_neutral[cfa_pattern[i]]
-    white_balanced_image = np.clip(white_balanced_image, 0.0, 1.0)
+    #no clipping
+    #white_balanced_image = np.clip(white_balanced_image, 0.0, 1.0)
     return white_balanced_image
     #return normalized_image
 
@@ -566,8 +569,8 @@ def demosaic(white_balanced_image, cfa_pattern, output_channel_order='BGR', alg_
         max_val = 255
         wb_image = (white_balanced_image * max_val).astype(dtype=np.uint8)
     else:
-        max_val = 16383
-        wb_image = (white_balanced_image * max_val).astype(dtype=np.uint16)
+        max_val = 16383/np.max(white_balanced_image)
+        wb_image = (white_balanced_image * max_val).astype(dtype=np.uint32)
 
     if alg_type in ['', 'EA', 'VNG']:
         opencv_demosaic_flag = get_opencv_demsaic_flag(cfa_pattern, output_channel_order, alg_type=alg_type)
@@ -633,7 +636,8 @@ def apply_color_space_transform(demosaiced_image, color_correction_1, color_corr
     xyz_image = DF[np.newaxis, np.newaxis, :, :] * demosaiced_image[:, :, np.newaxis, :]
     xyz_image = np.sum(xyz_image, axis=-1)
 
-    xyz_image = np.clip(xyz_image, 0.0, 1.0)
+    #no clipping
+    #xyz_image = np.clip(xyz_image, 0.0, 1.0)
     return xyz_image
 
 
@@ -661,7 +665,8 @@ def transform_xyz_to_srgb(xyz_image):
 
     srgb_image = xyz2srgb[np.newaxis, np.newaxis, :, :] * xyz_image[:, :, np.newaxis, :]
     srgb_image = np.sum(srgb_image, axis=-1)
-    srgb_image = np.clip(srgb_image, 0.0, 1.0)
+    #removing clipping
+    #srgb_image = np.clip(srgb_image, 0.0, 1.0)
     return srgb_image
 
 
