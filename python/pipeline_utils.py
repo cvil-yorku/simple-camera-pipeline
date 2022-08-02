@@ -619,11 +619,11 @@ def apply_color_space_transform(demosaiced_image, color_correction_1, color_corr
         fm2_elements.append(i.decimal())
 
     cc_elements = []
-    for i in color_correction_1:
+    for i in color_correction_2:
         cc_elements.append(i.decimal())
     CC = np.array(cc_elements).reshape((3, 3))
 
-    g = 0.4
+    g = 0
     FM1 = np.array(fm1_elements).reshape((3,3))
     FM2 = np.array(fm2_elements).reshape((3, 3))
     FM = g*FM1 + (1-g)*FM2
