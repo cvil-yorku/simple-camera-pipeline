@@ -470,6 +470,8 @@ def performInterpolation(xyz_image, lut):
 
     rgb = rgb_image.astype('float32')
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+
+    hsv = np.clip(hsv, [0,0,0],[360,1,1])
     hsvChanged = lut.apply(hsv, interpolator=interp)
 
     #hsvChangedInt8 = hsvChanged.astype('uint8')

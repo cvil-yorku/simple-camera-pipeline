@@ -107,7 +107,7 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
         lut = metadata["lut3D"]
         looktable = metadata["profile_lut"]
         current_image = performInterpolation(current_image, lut)
-        current_image = performLookTable(current_image, looktable)
+        #current_image = performLookTable(current_image, looktable)
 
         params_['input_stage'] = 'hsv_table'
 
