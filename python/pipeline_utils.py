@@ -27,8 +27,14 @@ from .exif_data_formats import exif_formats
 from .exif_utils import parse_exif_tag, parse_exif, get_tag_values_from_ifds
 
 
+#raw_image.raw_image[54:4544,148:6868]
+#[54, 148, 4544, 6868]
+
+#raw image shape is 4544x6880
+
 def get_visible_raw_image(image_path):
-    raw_image = rawpy.imread(image_path).raw_image_visible.copy()
+    raw_image = rawpy.imread(image_path)#.raw_image_visible.copy()
+    #x = raw_image.raw_image[54:4544,148:6719]
     # raw_image = rawpy.imread(image_path).raw_image.copy()
     return raw_image
 
@@ -69,7 +75,7 @@ def get_metadata(image_path):
     metadata['forward_matrix_2'] = forward_matrix_2
     metadata['orientation'] = get_orientation(tags, ifds)
     metadata['noise_profile'] = get_noise_profile(tags, ifds)
-    metadata['lut3D'] = get_hsv_luts(tags, ifds)
+    metadata['hsv_lut'] = get_hsv_luts(tags, ifds)
     metadata['profile_lut'] = get_profile_luts(tags, ifds)
     # ...
 
@@ -148,39 +154,32 @@ def get_hsv_luts(tags, ifds):
     if hue_sat_map_dims is None:
         hue_sat_map_dims = get_tag_values_from_ifds(50937, ifds)
     possible_keys_2 = ['Image Tag 0xC6FA', 'Image Tag 50938', 'ProfileHueSatMapData1', 'Image ProfileHueSatMapData1']
-    #hsv_lut_1 = get_values(tags, possible_keys_2)
     hsv_lut_1 = None
     if hsv_lut_1 is None:
         hsv_lut_1 = get_tag_values_from_ifds(50939, ifds)
 
-    hue_sat_map_dims.append(3)
+    if(hue_sat_map_dims is not None and hsv_lut_1 is not None):
+        hue_sat_map_dims.append(3)
+        hsv_lut = np.reshape(hsv_lut_1, newshape = hue_sat_map_dims)
 
-    hsv_lut = np.reshape(hsv_lut_1, newshape = hue_sat_map_dims)
-    #lutTable =
-    lut3D = LUT3D(table = hsv_lut, domain=[[0,0,0], [360,1,1]])
-
-
-    return lut3D
+    return hsv_lut
 
 def get_profile_luts(tags, ifds):
     possible_keys_1 = ['Image Tag 0xC725', 'Image Tag 50981', 'ProfileLookTableDims', 'Image ProfileLookTableDims']
-    hue_sat_map_dims = get_values(tags, possible_keys_1)
-    if hue_sat_map_dims is None:
-        hue_sat_map_dims = get_tag_values_from_ifds(50981, ifds)
+    profile_dims = get_values(tags, possible_keys_1)
+    if profile_dims is None:
+        profile_dims = get_tag_values_from_ifds(50981, ifds)
     possible_keys_2 = ['Image Tag 0xC726', 'Image Tag 50982', 'ProfileLookTableData', 'Image ProfileLookTableData']
-    #hsv_lut_1 = get_values(tags, possible_keys_2)
-    hsv_lut_1 = None
-    if hsv_lut_1 is None:
-        hsv_lut_1 = get_tag_values_from_ifds(50982, ifds)
+    profile_lut = None
+    if profile_lut is None:
+        profile_lut = get_tag_values_from_ifds(50982, ifds)
 
-    hue_sat_map_dims.append(3)
-
-    hsv_lut = np.reshape(hsv_lut_1, newshape = hue_sat_map_dims)
-    #lutTable =
-    lut3D = LUT3D(table = hsv_lut, domain=[[0,0,0], [360,1,1]])
+    if (profile_dims is not None and profile_lut is not None):
+        profile_dims.append(3)
+        profile_lut = np.reshape(profile_lut, newshape=profile_dims)
 
 
-    return lut3D
+    return profile_lut
 
 def get_color_matrices(tags, ifds):
 
@@ -439,26 +438,68 @@ def get_opencv_demsaic_flag(cfa_pattern, output_channel_order, alg_type='VNG'):
     return opencv_demosaic_flag
 
 
-def performInterpolation(xyz_image, lut):
-    def interp(samples, lut_table):
+def performInterpolation(xyz_image, lut_table):
+    def interp(image_in, table):
         #p = np.mgrid[0:360:4, 0:100:100/30.0]
         #x = p.transpose(1,2,3, 0)
         #p = p.reshape(90,30,1,3)
         #samples = samples.reshape(4490*6720,3)
         #samples = samples.reshape(4490,6720,3)
+        #using the actual image that comes in creates some problems
+        image_copy = np.copy(image_in)
 
-        samples[:,:,0] = samples[:,:,0]*360
-        samples[:,:,1] = samples[:,:,1]
-        samples[:,:,2] = samples[:,:,2]
-        samplesOriginal = np.copy(samples)
-        samples = samples[:,:,0:2]
-        lut_table = lut_table.reshape(90,30,3)
-        p = (np.linspace(0,360,90), np.linspace(0,1,30))
-        outInterpolate = scipy.interpolate.interpn(points = p, values = lut_table, xi = samples)
-        samplesOriginal[:,:,0] =(samplesOriginal[:,:,0] + outInterpolate[:,:,0])
-        samplesOriginal[:,:,1] = (np.clip(samplesOriginal[:,:,1] * outInterpolate[:,:,1], 0, 1))
-        samplesOriginal[:,:,2] = (np.clip(samplesOriginal[:,:,2] * outInterpolate[:,:,2], 0, 1))
-        return samplesOriginal
+        image_out = np.copy(image_copy)
+
+
+        h_div, s_div, v_div, _= table.shape
+
+        if (h_div == 1):
+            image_copy[:, :, 0] = image_copy[:, :, 0] * 0
+
+        if (s_div == 1):
+            image_copy[:, :, 1] = image_copy[:, :, 1] * 0
+        #this is common for there not to be any value divisions
+        #for this just make all the values 0 so the interpolation works
+        if(v_div == 1):
+            image_copy[:, :, 2] = image_copy[:, :, 2] * 0
+
+        #clip these in case they fall out of the range of the table
+        image_copy[:, :, 1] = image_copy[:, :, 1].clip(0, 1)
+        image_copy[:, :, 2] = image_copy[:, :, 2].clip(0, 1)
+
+        #table = table.reshape(90,30,3)
+        #i do wrap around trick for hue
+        table_expanded_hue = np.empty((h_div+2,s_div,v_div,3))
+        #expand the table to allow "wrap around calculation"
+        table_expanded_hue[0, :, :] = table[-1,:,:]
+        table_expanded_hue[-1, :, :] = table[0, :, :]
+        table_expanded_hue[1:h_div+1, :, :] = table
+
+        table_expanded_hue[0, :, :] = table[-1, :, :]
+        table_expanded_hue[-1, :, :] = table[0, :, :]
+        table_expanded_hue[1:h_div + 1, :, :] = table
+        table_expanded = table_expanded_hue
+
+        #as for value we just add an extra dimension to make interp function happy
+        table_expanded_val = np.empty((h_div + 2, s_div, v_div+1, 3))
+        if(v_div == 1):
+            table_expanded_val[:, :, -1] = table_expanded_hue[:, :, 0]
+            table_expanded_val[:, :, 0:v_div] = table_expanded_hue
+            v_div += 1
+            table_expanded = table_expanded_val
+
+
+
+        hue_p = np.linspace(0-360/h_div,360,h_div+2)
+        sat_p = np.linspace(0, 1, s_div)
+        val_p = np.linspace(0, 1, v_div)
+        p = (hue_p, sat_p, val_p)
+        outInterpolate = scipy.interpolate.interpn(points = p, values = table_expanded, xi = image_copy)
+        image_out[:,:,0] =(image_out[:,:,0] + outInterpolate[:,:,0] + 360) % 360 #hue
+        image_out[:,:,1] = image_out[:,:,1] * outInterpolate[:,:,1] #sat
+        image_out[:,:,2] = image_out[:,:,2] * outInterpolate[:,:,2] #value
+
+        return image_out
 
     #prophoto
     rgb2xyz = np.array([[0.7976749, 0.1351917, 0.0313534],
@@ -466,17 +507,71 @@ def performInterpolation(xyz_image, lut):
                          [0.0000000, 0.0000000, 0.8252100]])
 
     xyz2rgb = np.linalg.inv(rgb2xyz)
-
     rgb_image = xyz2rgb[np.newaxis, np.newaxis, :, :] * xyz_image[:, :, np.newaxis, :]
     rgb_image = np.sum(rgb_image, axis=-1)
 
-
+    #fix hsv calculation
     rgb = rgb_image.astype('float32')
-    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-    hsvChanged = lut.apply(hsv, interpolator=interp)
+
+    #taken from https://stackoverflow.com/questions/2612361/convert-rgb-values-to-equivalent-hsv-values-using-python
+    def rgb2hsv(rgb):
+        """ convert RGB to HSV color space
+
+        :param rgb: np.ndarray
+        :return: np.ndarray
+        """
+
+        rgb = rgb.astype('float')
+        maxv = np.amax(rgb, axis=2)
+        maxc = np.argmax(rgb, axis=2)
+        minv = np.amin(rgb, axis=2)
+        minc = np.argmin(rgb, axis=2)
+
+        hsv = np.zeros(rgb.shape, dtype='float')
+        hsv[maxc == minc, 0] = np.zeros(hsv[maxc == minc, 0].shape)
+        hsv[maxc == 0, 0] = (((rgb[..., 1] - rgb[..., 2]) * 60.0 / (maxv - minv + np.spacing(1))) % 360.0)[maxc == 0]
+        hsv[maxc == 1, 0] = (((rgb[..., 2] - rgb[..., 0]) * 60.0 / (maxv - minv + np.spacing(1))) + 120.0)[maxc == 1]
+        hsv[maxc == 2, 0] = (((rgb[..., 0] - rgb[..., 1]) * 60.0 / (maxv - minv + np.spacing(1))) + 240.0)[maxc == 2]
+        hsv[maxv == 0, 1] = np.zeros(hsv[maxv == 0, 1].shape)
+        hsv[maxv != 0, 1] = (1 - minv / (maxv + np.spacing(1)))[maxv != 0]
+        hsv[..., 2] = maxv
+
+        return hsv
+
+    def hsv2rgb(hsv):
+        """ convert HSV to RGB color space
+
+        :param hsv: np.ndarray
+        :return: np.ndarray
+        """
+
+        hi = np.floor(hsv[..., 0] / 60.0) % 6
+        hi = hi.astype('uint8')
+        v = hsv[..., 2].astype('float')
+        f = (hsv[..., 0] / 60.0) - np.floor(hsv[..., 0] / 60.0)
+        p = v * (1.0 - hsv[..., 1])
+        q = v * (1.0 - (f * hsv[..., 1]))
+        t = v * (1.0 - ((1.0 - f) * hsv[..., 1]))
+
+        rgb = np.zeros(hsv.shape)
+        rgb[hi == 0, :] = np.dstack((v, t, p))[hi == 0, :]
+        rgb[hi == 1, :] = np.dstack((q, v, p))[hi == 1, :]
+        rgb[hi == 2, :] = np.dstack((p, v, t))[hi == 2, :]
+        rgb[hi == 3, :] = np.dstack((p, q, v))[hi == 3, :]
+        rgb[hi == 4, :] = np.dstack((t, p, v))[hi == 4, :]
+        rgb[hi == 5, :] = np.dstack((v, p, q))[hi == 5, :]
+
+        return rgb
+
+
+    hsv = rgb2hsv(rgb)
+
+    #hsvChanged = hsv
+    hsvChanged = interp(hsv, lut_table)
+    #hsvChanged = lut.apply(hsv, interpolator=interp)
 
     #hsvChangedInt8 = hsvChanged.astype('uint8')
-    rgbChanged = (cv2.cvtColor(hsvChanged.astype('float32'), cv2.COLOR_HSV2RGB))
+    rgbChanged = (hsv2rgb(hsvChanged.astype('float32')))
     #rgbChanged = rgbChanged /255.0
 
 
@@ -514,7 +609,7 @@ def performLookTable(xyz_image, lut):
         lut_table = lut_table.reshape(36,8,16,3)
         p = (np.linspace(0,360,36), np.linspace(0,1,8), np.linspace(0,1,16))
         outInterpolate = scipy.interpolate.interpn(points = p, values = lut_table, xi = samples)
-        samplesOriginal[:,:,0] =(samplesOriginal[:,:,0] + outInterpolate[:,:,0])
+        samplesOriginal[:,:,0] =(samplesOriginal[:,:,0] )#+ outInterpolate[:,:,0])
         samplesOriginal[:,:,1] = (np.clip(samplesOriginal[:,:,1] * outInterpolate[:,:,1], 0, 1))
         samplesOriginal[:,:,2] = (np.clip(samplesOriginal[:,:,2] * outInterpolate[:,:,2], 0, 1))
         return samplesOriginal
@@ -570,7 +665,7 @@ def demosaic(white_balanced_image, cfa_pattern, output_channel_order='BGR', alg_
         wb_image = (white_balanced_image * max_val).astype(dtype=np.uint8)
     else:
         max_val = 16383/np.max(white_balanced_image)
-        wb_image = (white_balanced_image * max_val).astype(dtype=np.uint32)
+        wb_image = (white_balanced_image * max_val).astype(dtype=np.uint16)
 
     if alg_type in ['', 'EA', 'VNG']:
         opencv_demosaic_flag = get_opencv_demsaic_flag(cfa_pattern, output_channel_order, alg_type=alg_type)
@@ -619,11 +714,11 @@ def apply_color_space_transform(demosaiced_image, color_correction_1, color_corr
         fm2_elements.append(i.decimal())
 
     cc_elements = []
-    for i in color_correction_2:
+    for i in color_correction_1:
         cc_elements.append(i.decimal())
     CC = np.array(cc_elements).reshape((3, 3))
 
-    g = 0
+    g = 1
     FM1 = np.array(fm1_elements).reshape((3,3))
     FM2 = np.array(fm2_elements).reshape((3, 3))
     FM = g*FM1 + (1-g)*FM2
@@ -720,6 +815,7 @@ def reverse_orientation(image, orientation):
 
 def apply_gamma(x):
     print("APPLYING GAMMA with 2.4")
+    x = np.clip(x, 0, 1)
     return np.clip(1.055 * (x ** (1.0 / 2.2)) - 0.055, 0, 1)
 
 

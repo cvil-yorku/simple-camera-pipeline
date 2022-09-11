@@ -1,7 +1,7 @@
 import numpy as np
 from .pipeline_utils import get_visible_raw_image, get_metadata, normalize, polynomial, white_balance, demosaic, \
     apply_color_space_transform, transform_xyz_to_srgb, apply_gamma, apply_tone_map, fix_orientation, \
-    lens_shading_correction, vignetting_correction, performInterpolation, performLookTable
+    lens_shading_correction, vignetting_correction, performInterpolation
 
 
 def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
@@ -106,16 +106,21 @@ def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):
     if params_['output_stage'] == current_stage:
         return current_image
 
+
+
     if params_['input_stage'] == current_stage:
-        lut = metadata["lut3D"]
-        looktable = metadata["profile_lut"]
+        hsv_lut = metadata["hsv_lut"]
+        profile_lut = metadata["profile_lut"]
         #comment for now
-        #current_image = performInterpolation(current_image, lut)
-        #current_image = performLookTable(current_image, looktable)
+        if hsv_lut is not None:
+            current_image = performInterpolation(current_image, hsv_lut) #hsv sat map
 
-        params_['input_stage'] = 'hsv_table'
+        if profile_lut is not None:
+            current_image = performInterpolation(current_image, profile_lut) #profile map
 
-    current_stage = 'hsv_table'
+        params_['input_stage'] = 'lut_table'
+
+    current_stage = 'lut_table'
 
     if params_['output_stage'] == current_stage:
         return current_image
