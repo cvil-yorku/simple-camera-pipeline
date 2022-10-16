@@ -1,7 +1,7 @@
 import numpy as np
-from .pipeline_utils import get_visible_raw_image, get_metadata, normalize, polynomial, white_balance, demosaic, \
-    apply_color_space_transform, transform_xyz_to_srgb, apply_gamma, apply_tone_map, fix_orientation, \
-    lens_shading_correction, vignetting_correction, performInterpolation
+from .pipeline_utils import get_visible_raw_image, get_metadata, normalize, polynomial, \
+    white_balance, demosaic, apply_color_space_transform, transform_xyz_to_srgb, apply_gamma, apply_tone_map, \
+    fix_orientation, lens_shading_correction, vignetting_correction, performInterpolation
 
 
 def run_pipeline_v2(image_or_path, params=None, metadata=None, fix_orient=True):

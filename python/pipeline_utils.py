@@ -440,11 +440,6 @@ def get_opencv_demsaic_flag(cfa_pattern, output_channel_order, alg_type='VNG'):
 
 def performInterpolation(xyz_image, lut_table):
     def interp(image_in, table):
-        #p = np.mgrid[0:360:4, 0:100:100/30.0]
-        #x = p.transpose(1,2,3, 0)
-        #p = p.reshape(90,30,1,3)
-        #samples = samples.reshape(4490*6720,3)
-        #samples = samples.reshape(4490,6720,3)
         #using the actual image that comes in creates some problems
         image_copy = np.copy(image_in)
 
@@ -469,28 +464,23 @@ def performInterpolation(xyz_image, lut_table):
 
         #table = table.reshape(90,30,3)
         #i do wrap around trick for hue
-        table_expanded_hue = np.empty((h_div+2,s_div,v_div,3))
+        table_expanded_hue = np.empty((h_div+1,s_div,v_div,3))
         #expand the table to allow "wrap around calculation"
-        table_expanded_hue[0, :, :] = table[-1,:,:]
         table_expanded_hue[-1, :, :] = table[0, :, :]
-        table_expanded_hue[1:h_div+1, :, :] = table
-
-        table_expanded_hue[0, :, :] = table[-1, :, :]
-        table_expanded_hue[-1, :, :] = table[0, :, :]
-        table_expanded_hue[1:h_div + 1, :, :] = table
+        table_expanded_hue[0:h_div, :, :] = table
         table_expanded = table_expanded_hue
 
         #as for value we just add an extra dimension to make interp function happy
-        table_expanded_val = np.empty((h_div + 2, s_div, v_div+1, 3))
+        table_expanded_val = np.empty((h_div + 1, s_div, v_div+1, 3))
         if(v_div == 1):
-            table_expanded_val[:, :, -1] = table_expanded_hue[:, :, 0]
-            table_expanded_val[:, :, 0:v_div] = table_expanded_hue
-            v_div += 1
-            table_expanded = table_expanded_val
+           table_expanded_val[:, :, -1] = table_expanded_hue[:, :, 0]
+           table_expanded_val[:, :, 0:v_div] = table_expanded_hue
+           v_div += 1
+           table_expanded = table_expanded_val
 
 
 
-        hue_p = np.linspace(0-360/h_div,360,h_div+2)
+        hue_p = np.linspace(0,360,h_div+1)
         sat_p = np.linspace(0, 1, s_div)
         val_p = np.linspace(0, 1, v_div)
         p = (hue_p, sat_p, val_p)
@@ -498,7 +488,6 @@ def performInterpolation(xyz_image, lut_table):
         image_out[:,:,0] =(image_out[:,:,0] + outInterpolate[:,:,0] + 360) % 360 #hue
         image_out[:,:,1] = image_out[:,:,1] * outInterpolate[:,:,1] #sat
         image_out[:,:,2] = image_out[:,:,2] * outInterpolate[:,:,2] #value
-
         return image_out
 
     #prophoto
@@ -507,6 +496,9 @@ def performInterpolation(xyz_image, lut_table):
                          [0.0000000, 0.0000000, 0.8252100]])
 
     xyz2rgb = np.linalg.inv(rgb2xyz)
+
+    #CLIPPING  - not sure about this
+    xyz_image = np.clip(xyz_image, 0, 1)
     rgb_image = xyz2rgb[np.newaxis, np.newaxis, :, :] * xyz_image[:, :, np.newaxis, :]
     rgb_image = np.sum(rgb_image, axis=-1)
 
@@ -533,7 +525,7 @@ def performInterpolation(xyz_image, lut_table):
         hsv[maxc == 1, 0] = (((rgb[..., 2] - rgb[..., 0]) * 60.0 / (maxv - minv + np.spacing(1))) + 120.0)[maxc == 1]
         hsv[maxc == 2, 0] = (((rgb[..., 0] - rgb[..., 1]) * 60.0 / (maxv - minv + np.spacing(1))) + 240.0)[maxc == 2]
         hsv[maxv == 0, 1] = np.zeros(hsv[maxv == 0, 1].shape)
-        hsv[maxv != 0, 1] = (1 - minv / (maxv + np.spacing(1)))[maxv != 0]
+        hsv[maxv != 0, 1] = ((maxv - minv) / (maxv + np.spacing(1)))[maxv != 0]
         hsv[..., 2] = maxv
 
         return hsv
@@ -615,9 +607,9 @@ def performLookTable(xyz_image, lut):
         return samplesOriginal
 
     #prophoto
-    rgb2xyz = np.array([[0.7976749, 0.1351917, 0.0313534],
-                         [0.2880402, 0.7118741, 0.0000857],
-                         [0.0000000, 0.0000000, 0.8252100]])
+    rgb2xyz = np.array([[0.7347, 	0.2653, 0.0],
+                         [0.1596, 0.8404, 0.0],
+                         [0.0366, 0.0001, 0.9633]])
 
     xyz2rgb = np.linalg.inv(rgb2xyz)
 
@@ -718,7 +710,7 @@ def apply_color_space_transform(demosaiced_image, color_correction_1, color_corr
         cc_elements.append(i.decimal())
     CC = np.array(cc_elements).reshape((3, 3))
 
-    g = 1
+    g = 0
     FM1 = np.array(fm1_elements).reshape((3,3))
     FM2 = np.array(fm2_elements).reshape((3, 3))
     FM = g*FM1 + (1-g)*FM2
