@@ -546,7 +546,7 @@ def performInterpolation(xyz_image, lut_table):
     def interp(image_in, table):
         # print("IMAGE IN VALS", image_in)
         # using the actual image that comes in creates some problems
-        print("Image In", image_in)
+        # print("Image In", image_in)
         image_copy = np.copy(image_in)
 
         image_out = np.copy(image_copy)
@@ -566,7 +566,7 @@ def performInterpolation(xyz_image, lut_table):
         # clip these in case they fall out of the range of the table
         image_copy[:, :, 1] = image_copy[:, :, 1].clip(0, 1)
         image_copy[:, :, 2] = image_copy[:, :, 2].clip(0, 1)
-        print("Image copy", image_copy)
+        # print("Image copy", image_copy)
         # table = table.reshape(90,30,3)
         # i do wrap around trick for hue
         table_expanded_hue = np.empty((h_div + 1, s_div, v_div, 3))
@@ -617,6 +617,7 @@ def performInterpolation(xyz_image, lut_table):
     # CLIPPING  - not sure about this
     # xyz_image = np.clip(xyz_image, 0, 1)
     # NOTE: causes problems when passing single hsv coordinate
+
     # xyz_image = np.squeeze(xyz_image)
     # rgb_image = (
     # xyz2rgb[np.newaxis, np.newaxis, :, :] * xyz_image[:, :, np.newaxis, :]
@@ -698,12 +699,12 @@ def performInterpolation(xyz_image, lut_table):
         return rgb
 
     # hsv = rgb2hsv(rgb)
-    print("XYZ IMAGE:", xyz_image)
+    # print("XYZ IMAGE:", xyz_image)
     hsv = xyz_image
     # hsvChanged = hsv
     hsvChanged = interp(hsv, lut_table)
 
-    print("HSV Changed:", hsvChanged)
+    # print("HSV Changed:", hsvChanged)
     # hsvChanged = lut.apply(hsv, interpolator=interp)
 
     # hsvChangedInt8 = hsvChanged.astype('uint8')
@@ -736,7 +737,6 @@ def performLookTable(xyz_image, lut):
         samples[:, :, 0] = samples[:, :, 0] * 360
         samples[:, :, 1] = samples[:, :, 1]
         samples[:, :, 2] = samples[:, :, 2]
-        print(samples)
         samplesOriginal = np.copy(samples)
         # samples = samples[:,:,0:2]
         lut_table = lut_table.reshape(36, 8, 16, 3)

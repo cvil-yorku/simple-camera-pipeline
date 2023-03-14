@@ -45,35 +45,18 @@ def _arrow3D(ax, x, y, z, dx, dy, dz, *args, **kwargs):
 setattr(Axes3D, "arrow3D", _arrow3D)
 
 
-def interp_hsv_lut(hsv_coord: tuple, lut: np.ndarray):
-    hue_p = np.linspace(0, 90, 90)
-    sat_p = np.linspace(0, 30, 30)
-    points = (hue_p, sat_p)
-    hsv_vals = [hsv_coord[0], hsv_coord[1]]
-    print("HSV VALS:", hsv_vals[0], hsv_vals[1])
-    outInterpolate = scipy.interpolate.interpn(
-        points=points, values=lut, xi=hsv_vals
-    )
-
-    print("INTERPOLATED Correction:", outInterpolate[:, :])
-    print("INTERPOLATED Correction:", outInterpolate[:, :, 0][0])
-    print("INTERPOLATED Correction:", outInterpolate[:, :, 1][0])
-    print("INTERPOLATED Correction:", outInterpolate[:, :, 2][0])
-
-    new_h = hsv_coord[0] + outInterpolate[:, :, 0][0]
-    new_s = hsv_coord[1] * outInterpolate[:, :, 1][0]
-    new_v = hsv_coord[2] * outInterpolate[:, :, 2][0]
-
-    return (new_h, new_s, new_v)
-
-
 def rawpaths_from_dir(dir_path, rawtype=".raw"):
-    # NOTE: for cyc7 no bldc motor captures
-    # for path, subdirs, files in os.walk(dir_path):
-    # for file in files:
-    # print(file)
-    # if '.raw' in file:
-    # paths.append(os.path.join(path, file))
+    """rawpaths_from_dir.
+    Returns list of image paths within the parent directory
+
+    Parameters
+    ----------
+    dir_path :
+        Directory containing raw paths
+    rawtype :
+        '.DNG', '.TIFF', etc.
+    """
+
     print("Dir_path:", dir_path)
     paths = [
         os.path.join(dir_path, f)
@@ -136,7 +119,11 @@ def print_lut(lut):
 
 
 def apply_lut(grid, lut, idx):
+    # TODO: clean this up, redifining / re slicing to get the same data
+    # multiple times, want to be able to have the same data that is plotted
+    # calculate for differences to be sure no errors are arising.
     V, H, S = grid
+    converted_vals = np.zeros(grid.shape)
     print("H shape:", H.shape)
     print("S shape:", S.shape)
     print("V shape:", V.shape)
@@ -148,122 +135,114 @@ def apply_lut(grid, lut, idx):
     ax.set_ylim(0, 1)
     ax.set_zlim(0, 1)
     print(grid.shape)
+
     _, i_max, j_max, k_max = grid.shape
+
+    # Convert values from input HSV to output by applying LUT
     for i in range(i_max):
         for j in range(j_max):
             for k in range(k_max):
                 h, s, v = H[i, j, k], S[i, j, k], V[i, j, k]
-                # h, s, v = 1.05, 1, 1
-                print(f"H: {h}, S: {s}, V: {v}")
+                print(f"HSV in: {h}, {s}, {v}")
                 hsv_coordinate = np.asarray(
                     [[[h]], [[s]], [[v]]], dtype=np.float32
                 )
                 hsv_coordinate = np.reshape(hsv_coordinate, (1, 1, 3))
-                print("HSV COORDINATE", hsv_coordinate)
+                # print("HSV COORDINATE", hsv_coordinate)
                 corrected = performInterpolation(hsv_coordinate, lut)[0, 0]
                 corrected[2] = np.clip(corrected[2], 0, 1)
                 # corrected[1] = np.clip(corrected[1], 0, 1)
                 # corrected[2] = np.clip(corrected[2], 0, 1)
                 # corrected = np.clip(corrected, 0, 1)
-                # print(f"HSV corrected: {corrected}")
-                # ax.arrow3D(
-                # h,
-                # s,
-                # v,
-                # int(corrected[0]),
-                # int(corrected[1]),
-                # int(corrected[2]),
-                # mutation_scale=1,
-                # ec="green",
-                # )
-                # ax.quiver(
-                # h,
-                # s,
-                # v,
-                # corrected[0],
-                # corrected[1],
-                # corrected[2],
-                # )
-                ax.quiver(
-                    h,
-                    s,
-                    v,
-                    corrected[0],
-                    corrected[1],
-                    corrected[2],
+                print(f"HSV corrected: {corrected}")
+                converted_vals[0][i, j, k] = corrected[0]
+                converted_vals[1][i, j, k] = corrected[1]
+                converted_vals[2][i, j, k] = corrected[2]
+
+    plot_v_idx = 0
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+    ax.set_xlim(0, 360)
+    ax.set_ylim(0, 1)
+    ax.set_zlim(0, 1)
+
+    # Plot each slice separately
+    for plot_v_idx in range(i_max):
+        for j in range(j_max):
+            for k in range(k_max):
+                plot_v = V[plot_v_idx, j, k]
+                h, s = H[plot_v_idx, j, k], S[plot_v_idx, j, k]
+                h_c, s_c = (
+                    converted_vals[0][plot_v_idx, j, k],
+                    converted_vals[1][plot_v_idx, j, k],
                 )
-                # break
-            # break
-        # break
+                # print("BEFORE:", h, s, plot_v)
+                # print("AFTER", h_c, s_c, plot_v)
+                dx, dy, dz = h_c - h, s_c - s, 0
+                # print("dx,dy,dz", dx, dy, dz)
+                if h > 10 and h < 350:
+                    ax.scatter(h, s, plot_v, color="green", s=3)
+                    ax.scatter(h_c, s_c, plot_v, color="red", s=3)
+
+                    ax.arrow3D(
+                        h,
+                        s,
+                        plot_v,
+                        dx,
+                        dy,
+                        dz,
+                        arrowstyle="-|>",
+                        linestyle="dashed",
+                        mutation_scale=5,
+                    )
 
     ax.set_xlabel("H")
     ax.set_ylabel("S")
     ax.set_zlabel("V")
 
     print("saving figure")
-    plt.savefig(f"./apply_lut_{idx}.png")
+    plt.savefig(f"./{idx}_slice_visualization_allvalslices.png")
+    plt.clf()
+
+    # Get difference between current value slice and all other slices that
+    # aren't the current value slice ( if no difference, then no need for 3D
+    # data )
+    for val_idx in range(i_max):
+        sl_1 = (
+            converted_vals[0][val_idx, :, :],
+            converted_vals[1][val_idx, :, :],
+        )
+        for compare_idx in range(i_max):
+            if compare_idx != val_idx:
+                sl_2 = (
+                    converted_vals[0][compare_idx, :, :],
+                    converted_vals[1][compare_idx, :, :],
+                )
+
+                print(
+                    f"========== Value idx {val_idx} vs. {compare_idx} - LUT #{idx} =========="
+                )
+                print("H diff:", np.abs(sl_1[0] - sl_2[0]))
+                print("S diff:", np.abs(sl_1[1] - sl_2[1]))
 
 
+# Directory containing raw images
 raw_dir = "/shared/data/autoexp-stack-dngs/"
 
 rawpaths = rawpaths_from_dir(raw_dir, ".dng")
 
-for idx, path in enumerate(rawpaths):
+for index, path in enumerate(rawpaths):
     metadata = get_metadata(path)
 
-    # HSV 3D LUT
+    # HSV and 3D LUT
     hsv_lut = metadata["hsv_lut"]
     lut_3d = metadata["profile_lut"]
 
     print("LUT shape:", hsv_lut.shape)
     # print_lut(hsv_lut)
-    block_3d = np.mgrid[0:1:3j, 0:360:3j, 0:1:3j]
+    block_3d = np.mgrid[0:1:5j, 0:360:5j, 0:1:5j]
     print("Block Shape:", block_3d.shape)
     plot_3dhsv(block_3d, "Dummy HSV Vals")
-
-    apply_lut(block_3d, hsv_lut, idx)
-    apply_lut(block_3d, lut_3d, "3dlut")
-    break
-    # Generate the image which covers all hsv values to see the transformation
-    # 1 channel is hue, 1 channel is saturation, another is value
-    # Want 3 channel image, where each channel is a 2D plane between 0,1
-    # H = np.mgrid[0:90:100j, 0:90:100j][0]
-    # S = np.mgrid[0:30:100j, 0:30:100j][1]
-    # V = np.mgrid[0:1:100j, 0:1:100j][0]
-    # print(H.shape)
-    # print(S.shape)
-    # print(V.shape)
-    # dummy_hsv = np.dstack([H, S, V])
-    # print("Dummy hsv shape:", dummy_hsv.shape)
-    # imageio.imsave("dummyhsv.png", dummy_hsv)
-
-    # fig = plt.figure()
-    # ax = fig.add_subplot(projection="3d")
-    # ax.set_xlabel("H")
-    # ax.set_ylabel("S")
-    # ax.set_zlabel("V")
-    # ax.scatter(H, S, V)
-    # print("Saving figure")
-    # plt.savefig("./mgrid_testing.png")
-
-    # interpolated = performInterpolation(dummy_hsv, hsv_lut)
-    # print("Interpolated shape", interpolated.shape)
-    # X = interpolated[:, :, 0]
-    # Y = interpolated[:, :, 1]
-    # Z = interpolated[:, :, 2]
-    # fig = plt.figure()
-    # ax = fig.add_subplot(projection="3d")
-    # ax.set_xlabel("H")
-    # ax.set_ylabel("S")
-    # ax.set_zlabel("V")
-    # ax.scatter(Y, Z, X)
-    # print("Saving figure")
-    # plt.savefig("./lut_testing.png")
+    apply_lut(block_3d, hsv_lut, index)
+    apply_lut(block_3d, lut_3d, f"3dlut_{index}")
     # break
-
-    # print("INTERPOLATED SHAPE", interpolated.shape)
-
-    # plot_3DLUT(dummy_hsv, "hsv")
-    # plot_3DLUT(interpolated, "lut conversion")
-
-    # print(profile_lut)
