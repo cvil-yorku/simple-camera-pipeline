@@ -7,6 +7,7 @@ import imageio
 from matplotlib.patches import FancyArrowPatch
 from mpl_toolkits.mplot3d.proj3d import proj_transform
 from mpl_toolkits.mplot3d.axes3d import Axes3D
+import matplotlib.cm as cm
 
 
 class Arrow3D(FancyArrowPatch):
@@ -133,12 +134,12 @@ def apply_lut(grid, lut, idx):
     print("LUT SHAPE:", lut.shape)
 
     # TODO: add parameter to toggle plotting...
-    fig = plt.figure()
-    ax = fig.add_subplot(projection="3d")
-    ax.set_title("Corrected HSV values")
-    ax.set_xlim(0, 360)
-    ax.set_ylim(0, 1)
-    ax.set_zlim(0, 1)
+    # fig = plt.figure()
+    # ax = fig.add_subplot(projection="3d")
+    # ax.set_title("Corrected HSV values")
+    # ax.set_xlim(0, 360)
+    # ax.set_ylim(0, 1)
+    # ax.set_zlim(0, 1)
 
     print(grid.shape)
 
@@ -239,13 +240,9 @@ def afterlut_val_slice_diff(after_lut, name="noname_camera"):
     # data )
 
     _, v_max, h_max, s_max = after_lut.shape
-    fig = plt.figure()
-    ax = fig.add_subplot(projection="3d")
-    ax.set_xlim(0, 360)
-    ax.set_ylim(0, 1)
-    ax.set_zlim(0, 1)
 
-    # TODO: Move this to separate function
+    # TODO: Plot the difference between a slice and all others as a heatmap
+
     for val_idx in range(v_max):
         sl_1 = (
             after_lut[0][val_idx, :, :],
@@ -262,8 +259,52 @@ def afterlut_val_slice_diff(after_lut, name="noname_camera"):
                 print(
                     f"========== Value idx {val_idx} vs. {compare_idx} - LUT {name} =========="
                 )
+                h_diff = sl_1[0] - sl_2[0]
+                print("Hdiff max", np.abs(h_diff).max())
+
+                fig = plt.figure()
+                ax = fig.add_subplot(projection="3d")
+                ax.set_title(f"{name}, {val_idx} vs {compare_idx}")
+                ax.set_xlim(0, 4)
+                ax.set_ylim(0, 4)
+                ax.set_zlim(0, 4)
+
+                for h_idx in range(h_diff.shape[0]):
+                    for hval_idx in range(h_diff.shape[1]):
+                        # TODO: normalize colors based on maximum across all
+                        # differences so colors are standardized and not relative
+                        # to each hue slice
+
+                        colors = cm.rainbow(
+                            np.linspace(0, 1, int(np.abs(h_diff).max()) + 1)
+                        )
+
+                        h_diff_color_idx = int(np.abs(h_diff[h_idx, hval_idx]))
+
+                        # print("H diff color index:", h_diff_color_idx)
+                        # print("COLOR:", colors[h_diff_color_idx])
+                        # print("h idx", h_idx)
+                        # print("val_idx", val_idx)
+                        # print("compare_idx", compare_idx)
+
+                        ax.scatter(
+                            hval_idx,
+                            compare_idx,
+                            h_idx,
+                            color=colors[h_diff_color_idx],
+                        )
+
+                ax.set_xlabel("V")
+                ax.set_ylabel("V slice compare")
+                ax.set_zlabel("H")
+                plt.savefig(
+                    f"{name}-validx-{val_idx}-compared-{compare_idx}.png"
+                )
+                plt.clf()
+
+                # s_diff = sl_1[1] - sl_2[1]
                 print("H diff:", np.abs(sl_1[0] - sl_2[0]))
-                print("S diff:", np.abs(sl_1[1] - sl_2[1]))
+                # print("S diff:", np.abs(sl_1[1] - sl_2[1]))
 
 
 # Directory containing raw images
@@ -302,7 +343,7 @@ for index, path in enumerate(rawpaths):
 
     # Plot before / after of hsv lut
     plot_lut_val_slice(block_3d, hsv_lut_applied, name=f"{camera_name}_hsv")
-    afterlut_val_slice_diff(hsv_lut_applied, name=f"{camera_name}_hsv")
+    # afterlut_val_slice_diff(hsv_lut_applied, name=f"{camera_name}_hsv")
 
     # Plot before / after of 3D lut
     plot_lut_val_slice(block_3d, lut_3d_applied, name=f"{camera_name}_3dlut")
