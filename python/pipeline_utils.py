@@ -178,10 +178,16 @@ def get_hsv_luts(tags, ifds):
         "Image Tag 50937",
         "ProfileHueSatMapDims",
         "Image ProfileHueSatMapDims",
+        "Image Tag 0xCD39",
     ]
+
     hue_sat_map_dims = get_values(tags, possible_keys_1)
+
+    print("hue_sat_map_dims", hue_sat_map_dims)
+
     if hue_sat_map_dims is None:
         hue_sat_map_dims = get_tag_values_from_ifds(50937, ifds)
+
     possible_keys_2 = [
         "Image Tag 0xC6FA",
         "Image Tag 50938",
@@ -189,13 +195,19 @@ def get_hsv_luts(tags, ifds):
         "Image ProfileHueSatMapData1",
     ]
     hsv_lut_1 = None
+
     if hsv_lut_1 is None:
+        print("HSV LUT TAG SEARCH")
         hsv_lut_1 = get_tag_values_from_ifds(50939, ifds)
 
+        print("HSV LUT TAG SEARCH")
+
+    hsv_lut = None
     if hue_sat_map_dims is not None and hsv_lut_1 is not None:
         hue_sat_map_dims.append(3)
         hsv_lut = np.reshape(hsv_lut_1, newshape=hue_sat_map_dims)
 
+    print("hsv_lut", hsv_lut)
     return hsv_lut
 
 
@@ -313,7 +325,9 @@ def get_noise_profile(tags, ifds):
 def get_values(tags, possible_keys):
     values = None
     for key in possible_keys:
+        print("Trying Key", key)
         if key in tags.keys():
+            print("KEY USED:", key)
             values = tags[key].values
     return values
 
@@ -590,7 +604,7 @@ def performInterpolation(xyz_image, lut_table):
         outInterpolate = scipy.interpolate.interpn(
             points=p, values=table_expanded, xi=image_copy
         )
-        print("INTERPOLATED LUT:", outInterpolate)
+        # print("INTERPOLATED LUT:", outInterpolate)
 
         image_out[:, :, 0] = (
             image_out[:, :, 0] + outInterpolate[:, :, 0] + 360
