@@ -8,6 +8,9 @@ from matplotlib.patches import FancyArrowPatch
 from mpl_toolkits.mplot3d.proj3d import proj_transform
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 import matplotlib.cm as cm
+import pdb
+
+results_dir = "./results"
 
 
 class Arrow3D(FancyArrowPatch):
@@ -38,7 +41,6 @@ class Arrow3D(FancyArrowPatch):
 
 def _arrow3D(ax, x, y, z, dx, dy, dz, *args, **kwargs):
     """Add an 3d arrow to an `Axes3D` instance."""
-
     arrow = Arrow3D(x, y, z, dx, dy, dz, *args, **kwargs)
     ax.add_artist(arrow)
 
@@ -70,7 +72,7 @@ def rawpaths_from_dir(dir_path, rawtype=".raw"):
 
 def plot_3dhsv(lut, tag="lut"):
     # unpack 3d mesh
-    V, H, S = lut
+    H, S, V = lut
     fig = plt.figure()
     ax = fig.add_subplot(projection="3d")
     ax.set_title(tag)
@@ -82,24 +84,27 @@ def plot_3dhsv(lut, tag="lut"):
     ax.set_zlim(0, 1)
     ax.scatter(H, S, V)
     print(f"Saving figure: {tag}")
-    plt.savefig(f"./{tag}_testing.png")
+    save_pth = os.path.join(results_dir, f"{tag}_testing.png")
+    plt.savefig(save_pth)
 
 
-def print_lut(lut):
+def print_lut(lut, tag="noname_camera"):
+    print(f"Lut shape: {lut.shape}")
     h, s, _, _ = lut.shape
     values = np.linspace(0, 1, 10)
     fig = plt.figure()
     ax = fig.add_subplot(projection="3d")
-    ax.set_title("lut loop")
+    ax.set_title(f"{tag} direct hsv lut plot")
 
     for i in range(h):
         for j in range(s):
-            print(lut[i, j])
+            # print(lut[i, j])
             lut_conversion = lut[i, j][0]
+            print(f"Lut at idx1:{i}, idx2:{j} -> {lut_conversion}")
             ax.scatter(
-                lut_conversion[0],
-                lut_conversion[1],
-                lut_conversion[2],
+                lut_conversion[0],  # H
+                lut_conversion[1],  # S
+                lut_conversion[2],  # V
             )
 
             # for v in values:
@@ -117,38 +122,81 @@ def print_lut(lut):
     ax.set_zlabel("V")
 
     print("saving figure")
-    plt.savefig(f"./lut_loop.png")
+    save_pth = os.path.join(results_dir, f"{tag}_direct_hsvlut.png")
+    plt.savefig(save_pth)
 
 
-def apply_lut(grid, lut, idx):
+def print_val_lut(lut, tag="noname_camera"):
+    print(f"Lut shape: {lut.shape}")
+    h, s, _, _ = lut.shape
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+    ax.set_title(f"{tag} direct hsv lut plot")
+
+    plot_matrix = np.zeros((h, s))
+
+    for i in range(h):
+        for j in range(s):
+            # print(lut[i, j])
+            lut_conversion = lut[i, j][0]
+            # ax.scatter(
+            # i,  # H
+            # j,  # S
+            # lut_conversion[2],  # V
+            # )
+
+            plot_matrix[i, j] = np.clip(lut_conversion[2], 0, 1)
+
+    ax.set_xlabel("H")
+    ax.set_ylabel("S")
+    ax.set_zlabel("V")
+    ax.set_zlim(0, 1.8)
+
+    xx, yy = np.mgrid[0:h, 0:s]
+    ax.plot_surface(
+        xx,
+        yy,
+        plot_matrix,
+        rstride=1,
+        cstride=1,
+        cmap="viridis",
+        edgecolor="none",
+    )
+    print("saving figure")
+    save_pth = os.path.join(results_dir, f"{tag}_direct_hsvlut_value.png")
+    plt.savefig(save_pth)
+
+
+def apply_lut(grid, lut, name="noname_camera_hsvorprofile_lut", plot=True):
     # TODO: clean this up, redifining / re slicing to get the same data
     # multiple times, want to be able to have the same data that is plotted
     # calculate for differences to be sure no errors are arising.
 
     V, H, S = grid
     converted_vals = np.zeros(grid.shape)
+    hue_sat_plane = np.zeros((100, 100))
 
     print("H shape:", H.shape)
     print("S shape:", S.shape)
     print("V shape:", V.shape)
     print("LUT SHAPE:", lut.shape)
+    print("GRID SHAPE", grid.shape)
 
-    # TODO: add parameter to toggle plotting...
-    # fig = plt.figure()
-    # ax = fig.add_subplot(projection="3d")
-    # ax.set_title("Corrected HSV values")
-    # ax.set_xlim(0, 360)
-    # ax.set_ylim(0, 1)
-    # ax.set_zlim(0, 1)
+    _, val_len, hue_len, sat_len = grid.shape
 
-    print(grid.shape)
-
-    _, i_max, j_max, k_max = grid.shape
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(projection="3d")
+        ax.set_title(f"Input data and LUT conversion diff for {name}")
+        # ax.set_xlim(0, 360)
+        # ax.set_ylim(0, 1)
+        ax.set_zlim(0, 2)
 
     # Convert values from input HSV to output by applying LUT
-    for i in range(i_max):
-        for j in range(j_max):
-            for k in range(k_max):
+    for i in range(val_len):
+        for j in range(hue_len):
+            for k in range(sat_len):
+                # pdb.set_trace()
                 h, s, v = H[i, j, k], S[i, j, k], V[i, j, k]
 
                 # print(f"HSV in: {h}, {s}, {v}")
@@ -157,33 +205,62 @@ def apply_lut(grid, lut, idx):
                     [[[h]], [[s]], [[v]]], dtype=np.float32
                 )
 
+                # print("HSV COORDINATE BEFORE RESHAPE", hsv_coordinate)
                 hsv_coordinate = np.reshape(hsv_coordinate, (1, 1, 3))
 
-                # print("HSV COORDINATE", hsv_coordinate)
+                # print("HSV COORDINATE INPUT", hsv_coordinate)
 
                 # NOTE: performInterpolation maintains positioning of HSV
                 corrected = performInterpolation(hsv_coordinate, lut)[0, 0]
-                corrected[2] = np.clip(corrected[2], 0, 1)
+                # print("CORRECTED HSV", corrected)
 
-                # corrected[1] = np.clip(corrected[1], 0, 1)
-                # corrected[2] = np.clip(corrected[2], 0, 1)
-                # corrected = np.clip(corrected, 0, 1)
+                if plot:
+                    h_in, s_in, v_in = hsv_coordinate[0, 0]
+                    h_out, s_out, v_out = corrected
 
-                # print(f"HSV corrected: {corrected}")
+                    dx, dy, dz = h_out - h_in, s_out - s_in, v_out - v_in
 
-                converted_vals[0][i, j, k] = corrected[0]  # H
-                converted_vals[1][i, j, k] = corrected[1]  # S
-                converted_vals[2][i, j, k] = corrected[2]  # V
+                    ax.scatter(h_in, s_in, v_out, color="green", s=3)
+                    hue_sat_plane[j, k] = v_out
+
+                    # ax.scatter(h_out, s_out, v_out, color="red", s=3)
+
+                    # ax.arrow3D(
+                    # h_in,
+                    # s_in,
+                    # v_in,
+                    # dx,
+                    # dy,
+                    # dz,
+                    # arrowstyle="-|>",
+                    # linestyle="dashed",
+                    # mutation_scale=5,
+                    # )
+
+                converted_vals[0][i, j, k] = corrected[2]  # V
+                converted_vals[1][i, j, k] = corrected[0]  # H
+                converted_vals[2][i, j, k] = corrected[1]  # S
+
+    if plot:
+        print("saving figure")
+        save_pth = os.path.join(results_dir, f"{name}_input_vs_output.png")
+        plt.savefig(save_pth)
+        plt.clf()
 
     return converted_vals
 
 
+# WARN: BUG IN THIS FUNCTION
 def plot_lut_val_slice(before_lut, after_lut, name="noname_camera"):
+    print(f"plotting {name} arrow chart")
+    print(f"Before lut shape {before_lut.shape}")
+    print(f"After lut shape {after_lut.shape}")
+
     # TODO: Add flag for whether to plot or not
     fig = plt.figure()
     ax = fig.add_subplot(projection="3d")
     ax.set_title(f"Input data and LUT conversion diff for {name}")
-    ax.set_xlim(0, 360)
+    # ax.set_xlim(0, 360)
     ax.set_ylim(0, 1)
     ax.set_zlim(0, 1)
 
@@ -201,36 +278,40 @@ def plot_lut_val_slice(before_lut, after_lut, name="noname_camera"):
                     after_lut[1][plot_v_idx, j, k],
                 )
 
-                # print("BEFORE:", h, s, plot_v)
-                # print("AFTER", h_c, s_c, plot_v)
+                print("BEFORE:", h, s, plot_v)
+                print("AFTER", h_c, s_c, plot_v)
 
+                # BUG: should not be fixing v here
                 dx, dy, dz = h_c - h, s_c - s, 0
 
                 # print("dx,dy,dz", dx, dy, dz)
 
                 # To get around hue wrapping between 0-360
-                if h > 10 and h < 350:
-                    ax.scatter(h, s, plot_v, color="green", s=3)
-                    ax.scatter(h_c, s_c, plot_v, color="red", s=3)
+                # if h > 10 and h < 350:
+                ax.scatter(h, s, plot_v, color="green", s=3)
+                ax.scatter(h_c, s_c, plot_v, color="red", s=3)
 
-                    ax.arrow3D(
-                        h,
-                        s,
-                        plot_v,
-                        dx,
-                        dy,
-                        dz,
-                        arrowstyle="-|>",
-                        linestyle="dashed",
-                        mutation_scale=5,
-                    )
+                ax.arrow3D(
+                    h,
+                    s,
+                    plot_v,
+                    dx,
+                    dy,
+                    dz,
+                    arrowstyle="-|>",
+                    linestyle="dashed",
+                    mutation_scale=5,
+                )
 
     ax.set_xlabel("H")
     ax.set_ylabel("S")
     ax.set_zlabel("V")
 
     print("saving figure")
-    plt.savefig(f"./{name}_slice_visualization_allvalslices.png")
+    save_pth = os.path.join(
+        results_dir, f"{name}_slice_visualization_allvalslices.png"
+    )
+    plt.savefig(save_pth)
     plt.clf()
 
 
@@ -250,6 +331,8 @@ def afterlut_val_slice_diff(after_lut, name="noname_camera"):
         )
 
         for compare_idx in range(v_max):
+            # TODO: calculate all comparisons and then plot, so
+            # heatmaps have the same scale between all comparisons
             if compare_idx != val_idx:
                 sl_2 = (
                     after_lut[0][compare_idx, :, :],
@@ -275,9 +358,8 @@ def afterlut_val_slice_diff(after_lut, name="noname_camera"):
                         # differences so colors are standardized and not relative
                         # to each hue slice
 
-                        colors = cm.rainbow(
-                            np.linspace(0, 1, int(np.abs(h_diff).max()) + 1)
-                        )
+                        norm = np.linspace(0, 1, 360)
+                        colors = cm.rainbow(norm)
 
                         h_diff_color_idx = int(np.abs(h_diff[h_idx, hval_idx]))
 
@@ -297,9 +379,14 @@ def afterlut_val_slice_diff(after_lut, name="noname_camera"):
                 ax.set_xlabel("V")
                 ax.set_ylabel("V slice compare")
                 ax.set_zlabel("H")
-                plt.savefig(
-                    f"{name}-validx-{val_idx}-compared-{compare_idx}.png"
+                norm = plt.Normalize(0, 360)
+                fig.colorbar(cm.ScalarMappable(norm=norm, cmap=cm.rainbow))
+                # fig.colorbar(cm.ScalarMappable(norm=), ax=ax)
+                save_pth = os.path.join(
+                    results_dir,
+                    f"{name}-validx-{val_idx}-compared-{compare_idx}.png",
                 )
+                plt.savefig(save_pth)
                 plt.clf()
 
                 # s_diff = sl_1[1] - sl_2[1]
@@ -314,7 +401,7 @@ rawpaths = rawpaths_from_dir(raw_dir, ".dng")
 
 print(f"Paths of interest: {rawpaths}")
 
-for index, path in enumerate(rawpaths):
+for index, path in enumerate(rawpaths[1:]):
     print(f"CURRENT PATH:{path}")
 
     # NOTE: Assumes image is named after camera. For now...
@@ -323,28 +410,34 @@ for index, path in enumerate(rawpaths):
     # Get metadata of image, by passing path name to image to the function
     metadata = get_metadata(path)
 
-    # Get HSV and 3D lut from metadata
+    # Get HSV LUT from Metadata
     hsv_lut = metadata["hsv_lut"]
-    lut_3d = metadata["profile_lut"]
+    print(f"hsv_lut for {camera_name}", hsv_lut)
+    print("HSV LUT shape:", hsv_lut.shape)
 
-    print("LUT shape:", hsv_lut.shape)
+    # Get Profule LUT from Metadata
+    # profile_lut = metadata["profile_lut"]
+    # print(f"Profile lut for {camera_name}", profile_lut)
+    # print(f"Profile lut shape", profile_lut.shape)
 
     # Generate dummy data to apply LUTs to
     print("Generating dummy data to apply LUT")
-    block_3d = np.mgrid[0:1:5j, 0:360:5j, 0:1:5j]
+    # in dimensions -> v,h,s
+    block_3d = np.mgrid[0.5:0.5:1j, 0:360:100j, 0:1:100j]
     print("Block Shape:", block_3d.shape)
 
     # Plot dummy data
-    plot_3dhsv(block_3d, "Dummy HSV Vals")
+    # plot_3dhsv(block_3d, "Dummy HSV Vals")
 
     # Apply LUTS to dummy data
-    hsv_lut_applied = apply_lut(block_3d, hsv_lut, camera_name)
-    lut_3d_applied = apply_lut(block_3d, lut_3d, f"3dlut_{camera_name}")
+    # profile_lut_applied = apply_lut(
+    # block_3d_0_5, profile_lut, name=f"{camera_name}_profile_lut_05"
+    # )
 
-    # Plot before / after of hsv lut
-    plot_lut_val_slice(block_3d, hsv_lut_applied, name=f"{camera_name}_hsv")
-    # afterlut_val_slice_diff(hsv_lut_applied, name=f"{camera_name}_hsv")
+    print_val_lut(hsv_lut, tag=camera_name)
+    hsv_lut_applied = apply_lut(block_3d, hsv_lut, name=f"{camera_name}_hsv_1")
 
-    # Plot before / after of 3D lut
-    plot_lut_val_slice(block_3d, lut_3d_applied, name=f"{camera_name}_3dlut")
-    afterlut_val_slice_diff(lut_3d_applied, name=f"{camera_name}_3dlut")
+    # profile_lut_applied = apply_lut(
+    # block_3d_1, profile_lut, name=f"{camera_name}_profile_lut_1"
+    # )
+    # Visualize data before and after the LUT is applied

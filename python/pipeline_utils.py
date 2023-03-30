@@ -53,6 +53,7 @@ def get_image_ifds(image_path):
 
 
 def get_metadata(image_path):
+    print("LOADING METADATA FROM", image_path)
     metadata = {}
     tags = get_image_tags(image_path)
     ifds = get_image_ifds(image_path)
@@ -197,17 +198,16 @@ def get_hsv_luts(tags, ifds):
     hsv_lut_1 = None
 
     if hsv_lut_1 is None:
-        print("HSV LUT TAG SEARCH")
+        # print("HSV LUT TAG SEARCH")
         hsv_lut_1 = get_tag_values_from_ifds(50939, ifds)
 
-        print("HSV LUT TAG SEARCH")
+        # print("HSV LUT TAG SEARCH")
 
     hsv_lut = None
     if hue_sat_map_dims is not None and hsv_lut_1 is not None:
         hue_sat_map_dims.append(3)
         hsv_lut = np.reshape(hsv_lut_1, newshape=hue_sat_map_dims)
 
-    print("hsv_lut", hsv_lut)
     return hsv_lut
 
 
@@ -325,7 +325,6 @@ def get_noise_profile(tags, ifds):
 def get_values(tags, possible_keys):
     values = None
     for key in possible_keys:
-        print("Trying Key", key)
         if key in tags.keys():
             print("KEY USED:", key)
             values = tags[key].values
@@ -607,8 +606,8 @@ def performInterpolation(xyz_image, lut_table):
         # print("INTERPOLATED LUT:", outInterpolate)
 
         image_out[:, :, 0] = (
-            image_out[:, :, 0] + outInterpolate[:, :, 0] + 360
-        ) % 360  # hue
+            image_out[:, :, 0] + outInterpolate[:, :, 0]  # + 360
+        )  # % 360  # hue
         image_out[:, :, 1] = (
             image_out[:, :, 1] * outInterpolate[:, :, 1]
         )  # sat
